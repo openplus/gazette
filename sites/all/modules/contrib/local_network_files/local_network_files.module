@@ -1,0 +1,912 @@
+<?php
+/**
+ * @file
+ * Main module file.
+ */
+
+/**
+ * Implements hook_permission().
+ */
+function local_network_files_permission() {
+  return array(
+    'local_network_files_http_access' => array(
+      'title' => t('Access local / network files via HTTP / HTTPS'),
+      'description' => t('Allow users to access (view and download) local / network
+              files using HTTP or HTTPS protocols.  Grant this permission with care,
+              as without care in configuring
+              folder access permissions for the webserver and for the field itself,
+              users with this permission could potentially view / download sensitive
+              data.'),
+      'restrict access' => TRUE,
+    ),
+    'local_network_files_create_file_field' => array(
+      'title' => t('Create fields of type "Local / Network Files"'),
+      'description' => t('Allow users with "administer content type" permissions to create fields of
+              type "Local / Network Files" field.  Grant this permission with care, as without care
+              in configuring permissions for the webserver and for the field itself,
+              users with the "Access local / network files" permission could potentially
+              view / download sensitive data.  Ensure whomever is creating fields of this
+              type understands the various configuration implications.'),
+      'restrict access' => TRUE,
+    ),
+    'local_network_files_create_path_field' => array(
+      'title' => t('Create fields of type "Local / Network Path"'),
+      'description' => t('Allow users with "administer content type" permissions to create fields of
+              type "Local / Network Path" field.  Grant this permission with care, as without care
+              in configuring permissions for the webserver and for the field itself,
+              users with the "Access local / network files" permission could potentially
+              view / download sensitive data.  Ensure whomever is creating fields of this
+              type understands the various configuration implications.'),
+      'restrict access' => TRUE,
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu().
+ */
+function local_network_files_menu() {
+  $items = array();
+  $items['local_network_files'] = array(
+    'title' => 'Download network file',
+    'type' => MENU_CALLBACK,
+    'page callback' => 'local_network_files_download',
+    'access arguments' => array('local_network_files_http_access',),
+  );
+  return $items;
+}
+
+/**
+ * Download local / network file to browser.
+ *
+ * Menu callback function.  Checks if the current user has permissions to access the
+ * node referenced in the URL query string, and ensures there are no path elements
+ * that would allow reference to a file outside the directory on the node.  If all
+ * is correct, transfers the file contents to the user's browser.
+ */
+function local_network_files_download() {
+
+  $q = $_GET;
+  // Make sure all the required parts of the query are there.
+  if ( empty($q['etype']) || empty($q['eid']) || empty($q['path']) || empty($q['field']) || intval($q['delta']) != $q['delta'] || $q['delta'] < 0 ) {
+    return MENU_NOT_FOUND;
+  }
+  // Get the referenced entity.
+  $entities = entity_load($q['etype'], array($q['eid'],));
+  $entity = &$entities[$q['eid']];
+  // Check that the current user is allowed to access this entity, and that there are
+  // no back-pointing elements of the supplied path.
+  if ( !entity_access('view', $q['etype'], $entity) || strpos($q['path'], '/../') !== FALSE ||
+          strpos($q['path'], '\\..\\') !== FALSE ) {
+    return MENU_ACCESS_DENIED;
+  }
+
+  // Decode the path so we have a pure path, and then break into path-parts to extract the file name.
+  $q['path'] = urldecode($q['path']);
+  $path_parts = pathinfo($q['path']);
+  $file_name = $path_parts['basename'];
+  // Get the field instance so we know what kind of base-path with which we are dealing,
+  // and so we can create a correctly mapped internal URI to the requested file.
+  $instance = field_info_instance($q['etype'], $q['field'], $entity->type);
+  $base_path = ( $instance['widget']['type'] == 'local_network_path_text'
+          ? $entity->{$q['field']}['und'][$q['delta']]['path']
+          : $instance['settings']['start_path_constraint']);
+  $uri = _local_network_files_map_to_unc($base_path . $q['path'], $instance);
+
+  // Assemble the headers array.
+  $headers = array(
+    'Content-Type' => DrupalLocalStreamWrapper::getMimeType($uri),
+    'Pragma' => 'public',
+		'Expires' => '-1',
+		'Cache-Control' => 'public, must-revalidate, post-check=0, pre-check=0',
+		'Content-Disposition' => 'attachment; filename="' . $file_name . '"',
+  );
+
+  // And then finish off the file transfer.
+
+  if ( ob_get_level() ) {
+    ob_end_clean();
+  }
+
+  foreach ( $headers as $name => $value ) {
+    drupal_add_http_header($name, $value);
+  }
+  drupal_send_headers();
+  // Transfer file in 1024 byte chunks to save memory usage.
+  if ( $fd = fopen($uri, 'rb') ) {
+    while ( !feof($fd) ) {
+      print fread($fd, 1024);
+    }
+    fclose($fd);
+  }
+  else {
+    drupal_not_found();
+  }
+  drupal_exit();
+}
+
+
+/**
+ * Map a drive letter to an alternate drive letter and optional path.
+ * @param string $file
+ * @param array $instance
+ * @return string
+ */
+function _local_network_files_map_to_unc($file, $instance) {
+  $mappings = array();
+  $lines = explode("\n", str_replace(array("\r\n", "\r"), "\n", $instance['settings']['drive_letter_mapping']));
+  foreach ( $lines as $line ) {
+    if ( strpos($line, '|') ) {
+      list($drive_letter, $path) = explode('|', $line, 2);
+      $mappings[strtoupper($drive_letter)] = $path;
+    }
+  }
+  $file = trim($file, '"');
+  if ( in_array(strtoupper($file[0]), array_keys($mappings)) ) {
+    $file = rtrim(str_replace('\\', '/', $mappings[$file[0]]), '/') . '/' . ltrim(str_replace('\\', '/', substr($file, 2)), '/');
+  }
+  return $file;
+}
+
+
+
+/***************************************************************
+ * Field Type API hooks
+ ***************************************************************/
+
+/**
+ * Implements hook_field_info().
+ */
+function local_network_files_field_info() {
+ $field_info = array();
+  if ( user_access('local_network_files_create_file_field') ) {
+    $field_info['local_network_file'] = array(
+      'label' => t('Local Network Files'),
+      'description' => t('A text field where a local or network file\'s path can
+              be entered, and rendered as a link or plain text.'),
+      'instance_settings' => array(
+        'protocol' => 'file',
+        'start_path_constraint' => 'Do not leave this empty!',
+        'drive_letter_mapping' => '',
+      ),
+      'default_widget' => 'local_network_file_text',
+      'default_formatter' => 'local_network_file',
+    );
+  }
+  if ( user_access('local_network_files_create_path_field') ) {
+    $field_info['local_network_path'] = array(
+      'label' => t('Local Network Paths'),
+      'description' => t('A text field where local or a network path can be entered,
+              and rendered as a folder and tree structure.'),
+      'instance_settings' => array(
+        'protocol' => 'file',
+        'start_path_constraint' => 'Do not leave this empty!',
+        'drive_letter_mapping' => '',
+      ),
+      'default_widget' => 'local_network_path_text',
+      'default_formatter' => 'local_network_path',
+    );
+  }
+  return $field_info;
+}
+
+/**
+ * Implements hook_field_instance_settings_form().
+ */
+function local_network_files_field_instance_settings_form($field, $instance) {
+  $form = array();
+
+  $form['protocol'] = array(
+    '#type' => 'radios',
+    '#title' => t('Links Protocol'),
+    '#default_value' => $instance['settings']['protocol'],
+    '#required' => TRUE,
+    '#options' => array(
+      'file' => t('<strong>FILE:</strong> Use FILE as the schema to build the
+                    links, so that each like looks like "FILE://&lt;drive_letter&gt;/&lt;path&gt;/&lt;filename&gt;.&lt;extention&gt;".
+                    Note that most browsers will not open these links when clicked
+                    for security reasons, but some browsers may have add-ons that
+                    allow for some mechanism for opening the file through the link
+                    (for example, see the !LocalLink extension for FireFox).',
+                    array('!LocalLink' => l('LocalLink', 'http://locallink.mozdev.org/'),)),
+      'http' => t('<strong>HTTP / HTTPS:</strong> Use HTTP / HTTPS as the schema to build the
+                    links, which will transfer the file(s) to the user\'s browser
+                    using HTTP / HTTPS. <strong>Only choose this protocol if you are
+                    certain permissions have been correctly configured for the webserver,
+                    and that the webserver will not be able to access file system data
+                    that could compromise your security.  In addition, providing users
+                    with this type of access bypasses other restrictions to the file system
+                    that you may have in place (because it is actually the webserver\'s account
+                    that is accessing the file(s), not the user\'s), potentially allowing a user to view
+                    files that they may be restricted from viewing through normal file system
+                    permissions.</strong>  If you are unsure how to configure this field
+                    properly, see your systems administrator.'),
+    ),
+    '#description' => t('Choose by which protocol you wish to build links to referenced
+            files.  Note that if you choose "HTTP / HTTPS", only those users who have
+            permissions to access files using this protocol will have links rendered using
+            it.  For all other users, the "FILE" protocol will be used for link rendering.'),
+  );
+  $form['start_path_constraint'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Start-of-path constraint'),
+    '#default_value' => $instance['settings']['start_path_constraint'],
+    '#description' => t('Use this field to constrain the paths that users can enter
+            in this field.  Enter a root path in the form of') .
+            '<blockquote><em>&lt;' . t('drive_letter') . '&gt;</em>:<em>&lt;' .
+                t('\\path\\to\\folder') . '&gt;</em></blockquote>' .  t('All paths
+            then entered into this field must be either this path, or subpaths of this path.') .
+            ' <strong>' . t('WARNING: leaving this empty means the user can
+            enter any path, which could result in significant security issues.') . '</strong>',
+  );
+  $form['drive_letter_mapping'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Drive letter mapping'),
+    '#default_value' => $instance['settings']['drive_letter_mapping'],
+    '#description' => t('Use this field to map logical drive letters to different
+            letters and optional paths when formatting file names using links on the
+            "Manage Display" tab, and using either the HTTP or HTTPS protocols for
+            transferring the files to the browser.  You may wish to do this if user
+            workstation drive letter mappings are different than those on the server (for
+            example, client workstation drive letter "S:" is mapped to the server\'s
+            "D:\Company Data\Sections" drive and path).
+            Enter each mapping on a separate line in the form of') .
+            '<blockquote><em>&lt;' . t('drive_letter') . '&gt;</em>|<em>&lt;' .
+                t('drive_letter:\\path') . '&gt;</em></blockquote>' .
+            t('If the mapped drive letter and path are on another server, the
+            account under which the web server runs will require permissions to
+            read the mapped path and its contents, or an error will be returned
+            when the folder tree is rendered.'),
+  );
+  return $form;
+}
+
+/**
+ * Implements hook_field_validate().
+ *
+ * @see local_network_files_field_widget_error()
+ */
+function local_network_files_field_validate($entity_type, $entity, $field, $instance, $langcode, $items, &$errors) {
+  foreach ( $items as $delta => $item ) {
+    if ( !empty($item['path']) && !empty($instance['settings']['start_path_constraint']) &&
+            stripos(trim($item['path'], '"'), $instance['settings']['start_path_constraint']) !== 0 ) {
+      $errors[$field['field_name']][$langcode][$delta][] = array(
+        'error' => 'local_network_files_invalid',
+        'message' => t('The specified directory must start with !path.',
+                array('!path' => $instance['settings']['start_path_constraint'],)),
+      );
+    }
+  }
+}
+
+
+/**
+ * Implements hook_field_is_empty().
+ */
+function local_network_files_field_is_empty($item, $field) {
+  return empty($item['path']);
+}
+
+/**
+ * Implements hook_field_formatter_info().
+ *
+ * @see local_network_files_field_formatter_view()
+ */
+function local_network_files_field_formatter_info() {
+  return array(
+    // File list.
+    'local_network_file' => array(
+      'label' => t('File list'),
+      'field types' => array('local_network_file',),
+      'settings' => array(
+        'style' => 'ul',
+        'links' => FALSE,
+      ),
+    ),
+    // Folder and file tree.
+    'local_network_path' => array(
+      'label' => t('Folder and file tree structure'),
+      'field types' => array('local_network_path',),
+      'settings' => array(
+        'file_format' => '%filename (%size)',
+        'file_title' => t('Click to view / download %filename'),
+        'folder_format' => '%filename',
+        'folder_title' => t('Click to expand this folder'),
+        'links' => FALSE,
+      ),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_formatter_settings_summary().
+ */
+function local_network_files_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $display = &$instance['display'][$view_mode];
+  $settings = &$display['settings'];
+
+  $summary = array();
+
+  switch ( $display['type'] ) {
+
+    case 'local_network_file' :
+      switch ( $settings['style'] ) {
+        case 'ol' :
+          $summary[] = t('Ordered list');
+          break;
+        case 'ul' :
+          $summary[] = t('Unordered list');
+          break;
+        default :
+          $summary[] = t('Simple &lt;div&gt; wrappers');
+          break;
+      }
+      break;
+
+    case 'local_network_path' :
+      $summary[] = t('Files display: !format', array('!format' => $settings['file_format']));
+      $summary[] = t('Files title: !format', array('!format' => $settings['file_title']));
+      $summary[] = t('Folders display: !format', array('!format' => $settings['folder_format']));
+      $summary[] = t('Folders title: !format', array('!format' => $settings['folder_title'])) . '<br>';
+      break;
+
+    default :
+      break;
+  }
+
+  $summary[] = ( $settings['links'] ? t('Links to files') : t('Plain text') );
+
+  return theme('item_list', array('items' => $summary,));
+}
+
+/**
+ * Implements hook_field_formatter_settings_form
+ */
+function local_network_files_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  $display = &$instance['display'][$view_mode];
+  $settings = &$display['settings'];
+
+  $form = array();
+
+  switch ( $display['type'] ) {
+    case 'local_network_file' :
+      $form['style'] = array(
+        '#title' => t('Display style'),
+        '#type' => 'radios',
+        '#options' => array(
+          'ul' => t('Unordered list'),
+          'ol' => t('Ordered list'),
+          'div' => t('Simple &lt;div&gt; wrappers'),
+        ),
+        '#default_value' => $settings['style'],
+        '#required' => TRUE,
+        '#description' => t('Choose how you want the list of files rendered.'),
+      );
+      break;
+    case 'local_network_path' :
+      $form['display_formats'] = array(
+        '#type' => 'fieldset',
+        '#title' => t('Display Options'),
+        '#description' => '<p>' . t('Available tokens for use within the options below include:') . '</p>' .
+              theme('item_list', array('items' => array(
+                '%filename: ' . t('File name, with extension, for files, or for folders, the folder name.'),
+                '%basename: ' . t('File name, without extension.'),
+                '%extension: ' . t('File extension.'),
+                '%size: ' . t('Size of the file in human-readable format.'),
+                '%created: ' . t('Date the file was created, using the <a href="!url">Local Network Files format</a>.', array(
+                  '!url' => url('admin/config/regional/date-time'),
+                )),
+                '%modified: ' . t('Date the file was last modified, using the <a href="!url">Local Network Files format</a>.', array(
+                  '!url' => url('admin/config/regional/date-time'),
+                )),
+            )))
+      );
+      $form['display_formats']['file_format'] = array(
+        '#type' => 'textfield',
+        '#title' => t('File display format'),
+        '#default_value' => $settings['file_format'],
+      );
+      $form['display_formats']['file_title'] = array(
+        '#type' => 'textfield',
+        '#title' => t('File display title'),
+        '#default_value' => $settings['file_title'],
+      );
+      $form['display_formats']['folder_format'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Folder display format'),
+        '#default_value' => $settings['folder_format'],
+      );
+      $form['display_formats']['folder_title'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Folder display title'),
+        '#default_value' => $settings['folder_title'],
+      );
+      break;
+
+    default :
+      break;
+  }
+
+  $form['links'] = array(
+    '#title' => t('Links'),
+    '#type' => 'checkbox',
+    '#default_value' => $settings['links'],
+    '#description' => t('Check to render file names as links for those users with
+            permission to access local / network files.'),
+  );
+
+  return $form;
+
+}
+/**
+ * Implements hook_field_formatter_view().
+ *
+ * Formats as a set of divs, or as an ordered or unordered list, or in the case of
+ * a path, as a tree directory and files structure, with or without links.  Parses
+ * the display type to obtain options.
+ *
+ * @see local_network_files_field_formatter_info()
+ */
+function local_network_files_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+
+  $links = ( $display['settings']['links'] );
+
+  if ( $display['type'] == 'local_network_path' ) {
+    return local_network_files_build_folders(array(
+        'entity_type' => $entity_type,
+        'entity' => $entity,
+        'links' => $links,
+        'instance' => $instance,
+        'items' => $items,
+        'display' => $display,
+      ));
+  }
+
+  if ( $display['settings']['style'] == 'div' ) {
+    $item_wrapper = $element_wrapper = 'div';
+  }
+  else {
+    $item_wrapper = 'li';
+    $element_wrapper = $display['settings']['style'];
+  }
+
+  $entity_info = entity_get_info($entity_type);
+  $base_length = strlen($instance['settings']['start_path_constraint']);
+  $output = '<' . $element_wrapper . ' class="local-network-files' . ( $links ? ' links' : '' ) . '">' . "\n";
+  foreach ( $items as $delta => $item ) {
+    $file = trim($item['path'], '"');
+    if ( $links ) {
+      if ( $instance['settings']['protocol'] == 'http' && user_access('local_network_files_http_access') ) {
+        $output .= "<$item_wrapper>" . l($file, 'local_network_files',
+                    array(
+                      'query' => array(
+                        'path' => substr($file, $base_length),
+                        'etype' => $entity_type,
+                        'eid' => $entity->{$entity_info['entity keys']['id']},
+                        'field' => $instance['field_name'],
+                        'delta' => $delta,
+                      ),
+                    )) . "</$item_wrapper>\n";
+      }
+      else {
+        $output .= "<$item_wrapper>" . '<a href="file://' . $file . '">' . check_plain($file) . '</a>' . "</$item_wrapper>\n";
+      }
+    }
+    else {
+      $output .= "<$item_wrapper>" . check_plain($file) . "</$item_wrapper>\n";
+    }
+  }
+  $output .= "</$element_wrapper>\n";
+  $element = array(
+    array(
+      '#markup' => $output,
+    ),
+  );
+
+  return $element;
+}
+
+
+/**
+ * Render the path value(s) of a local / network path field as a tree of folders and files.
+ * @param type $variables An associative array with the following key => value pairs:
+ *        'instance' => the field instance
+ *        'links' => whether the file names should be rendered as links for downloading
+ *        'entity' => the entity in which the field is located
+ *        'items' => field value(s)
+ *        'display' => field display parameters
+ * @return array The element array to be rendered.
+ */
+function local_network_files_build_folders($variables) {
+  extract($variables);
+  $settings = &$display['settings'];
+  $element = array();
+  $params = array(
+    'dir' => NULL,
+    'eid' => $entity->nid,
+    'etype' => $entity_type,
+    'field' => $instance['field_name'],
+    'multi' => TRUE,
+    'controls' => TRUE,
+    'absolute' => TRUE,
+    'exclude' => array('CVS'),
+    'dirname' => preg_replace('/%(\w+)/', '[local-network-files:$1]', $settings['folder_format']),
+    'dirtitle' => preg_replace('/%(\w+)/', '[local-network-files:$1]', $settings['folder_title']),
+    'filename' => preg_replace('/%(\w+)/', '[local-network-files:$1]', $settings['file_format']),
+    'filetitle' => preg_replace('/%(\w+)/', '[local-network-files:$1]', $settings['file_title']),
+    'links' => $links,
+    'animation' => TRUE,
+    'protocol' => $instance['settings']['protocol'],
+  );
+  // Flatten "exclude" array.
+  $params['exclude'] = implode("\n", $params['exclude']);
+  foreach ( $items as $delta => $item ) {
+    $params['dir'] = _local_network_files_map_to_unc(trim($item['path'], '"'), $instance);
+    $params['dir_length'] = strlen($item['path']);
+    $params['delta'] = $delta;
+    // Render tree.
+    $files = _local_network_files_list_files($params['dir'], $params);
+    if ( empty($files) ) {
+      if (is_dir($params['dir']) && $handle = opendir($params['dir'])) {
+        closedir($handle);
+        $additional = '';
+      }
+      else {
+        $additional = '<p><em>' .
+              t('Either @dir is misspelled, or the webserver does not have permissions to
+                to view the directory.  If you are sure there are files in @dir,
+                please make sure the entered path is correctly spelled, and if so,
+                contact your systems administrator.',
+                      array('@dir' => $item['path'],)) .
+              '</em></p>';
+      }
+      $rendered = '<p><strong>' .
+              t('No files.') .
+              '</strong></p>' . $additional;
+    }
+    else {
+      $rendered = theme('local_network_files_folder_tree', array('files' => $files, 'params' => $params));
+    }
+    $element[$delta] = array(
+      '#markup' => '<p>' . check_plain($item['path']) . '</p>' . $rendered,
+    );
+  }
+  return $element;
+}
+/**
+ * Implements hook_field_widget_info().
+ *
+ * @see local_network_files_field_widget_form()
+ */
+function local_network_files_field_widget_info() {
+  return array(
+    'local_network_file_text' => array(
+      'label' => t('Local / Network File'),
+      'field types' => array('local_network_file'),
+    ),
+    'local_network_path_text' => array(
+      'label' => t('Local / Network Path'),
+      'field types' => array('local_network_path'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_field_widget_form().
+ */
+function local_network_files_field_widget_form(&$form, &$form_state, $field, $instance, $langcode, $items, $delta, $element) {
+
+  $value = isset($items[$delta]['path']) ? $items[$delta]['path'] : '';
+
+  $widget = $element;
+  $widget['#delta'] = $delta;
+
+  switch ( $instance['widget']['type'] ) {
+
+    case 'local_network_file_text' :
+      $widget += array(
+        '#type' => 'textfield',
+        '#default_value' => $value,
+      );
+      break;
+
+    case 'local_network_path_text' :
+      $widget += array(
+        '#type' => 'textfield',
+        '#default_value' => $value,
+      );
+      break;
+
+  }
+
+  $element['path'] = $widget;
+  return $element;
+}
+
+
+/**
+ * Implements hook_field_widget_error().
+ *
+ * hook_field_widget_error() lets us figure out what to do with errors
+ * we might have generated in hook_field_validate(). Generally, we'll just
+ * call form_error().
+ *
+ * @see local_network_files_field_validate()
+ * @see form_error()
+ */
+function local_network_files_field_widget_error($element, $error, $form, &$form_state) {
+  switch ( $error['error'] ) {
+    case 'local_network_files_invalid' :
+      form_error($element, $error['message']);
+      break;
+  }
+}
+
+
+/**
+ * Implements hook_tokens().
+ *
+ * Code adapted from filetree module.
+ */
+function local_network_files_tokens($type, $tokens, array $data = array(), array $options = array()) {
+  $replacements = array();
+  if ($type == 'local-network-files') {
+    foreach ( $tokens as $name => $original ) {
+      switch ( $name ) {
+        // The filename and basename are switched on purpose.
+        case 'filename' :
+          $replacements[$original] = pathinfo($data['filepath'], PATHINFO_BASENAME);
+          break;
+        case 'basename' :
+          $replacements[$original] = pathinfo($data['filepath'], PATHINFO_FILENAME);
+          break;
+        case 'extension' :
+          $replacements[$original] = pathinfo($data['filepath'], PATHINFO_EXTENSION);
+          break;
+        case 'size' :
+          $replacements[$original] = format_size(filesize($data['filepath']));
+          break;
+        case 'created' :
+          $replacements[$original] = format_date(filectime($data['filepath']), 'local_network_files');
+          break;
+        case 'modified' :
+          $replacements[$original] = format_date(filemtime($data['filepath']), 'local_network_files');
+          break;
+      }
+    }
+  }
+  return $replacements;
+}
+
+/**
+ * Implements hook_date_format_types().
+ */
+function local_network_files_date_format_types() {
+  return array(
+    'local_network_files' => t('Local Network Files'),
+  );
+}
+
+
+
+/**
+ * Implements hook_theme().
+ */
+function local_network_files_theme() {
+  return array(
+    'local_network_files_folder_tree' => array(
+      'variables' => array('files' => array(), 'params' => array(),),
+    ),
+  );
+}
+
+
+/**
+ * Recursively lists folders and files in this directory.
+ *
+ * Similar to file_scan_directory(), except that we need the hierarchy.
+ * Returns a sorted list which is compatible with theme('item_list') or
+ * theme('local_network_files'), folders first, then files.
+ *
+ * Code adapted from the filetree module.
+ */
+function _local_network_files_list_files($dir, $params) {
+  $list = array();
+  if ( is_dir($dir) && $handle = opendir($dir) ) {
+    $folders = $files = array();
+
+    // Parse .descript.ion file descriptions.
+    $descriptions = _local_network_files_parse_description($dir);
+
+    while ( FALSE !== ( $filename = readdir($handle) ) ) {
+      // Exclude certain paths:
+      // - those which start with a period (".", "..", and hidden files),
+      // - additional paths from the "exclude" param
+      if ( $filename[0] != '.' && !drupal_match_path($filename, $params['exclude']) ) {
+        $filepath = "$dir/$filename";
+        $token_args = array(
+          'filename' => $filename,
+          'filepath' => $filepath,
+          'descriptions' => $descriptions,
+          'params' => $params,
+        );
+
+        // It's a folder.
+        if ( is_dir($filepath) ) {
+          $folders[$filename] = array(
+            'data' => isset($descriptions[$filename]) ? $descriptions[$filename] : token_replace($params['dirname'], $token_args),
+            'children' => _local_network_files_list_files($filepath, $params),
+            'title' => token_replace($params['dirtitle'], $token_args),
+            'class' => array('folder'),
+          );
+        }
+
+        // It's a file.
+        else {
+          $files[$filename] = array(
+            'data' => token_replace($params['filename'], $token_args),
+            'title' => token_replace($params['filetitle'], $token_args),
+            'class' => array(_local_network_files_icon(pathinfo($filename, PATHINFO_EXTENSION))),
+          );
+          if ( $params['links'] ) {
+            if ( $params['protocol'] == 'http' && user_access('local_network_files_http_access') ) {
+              $files[$filename]['data'] = l($files[$filename]['data'], 'local_network_files',
+                      array(
+                        'query' => array(
+                          'path' => substr($filepath, $params['dir_length']),
+                          'etype' => $params['etype'],
+                          'eid' => $params['eid'],
+                          'field' => $params['field'],
+                          'delta' => $params['delta'],
+                        ),
+                      ));
+            }
+            else {
+              $files[$filename]['data'] = '<a href = "file://' . $filepath . '">' . check_plain($files[$filename]['data']) . '</a>';
+            }
+          }
+        }
+      }
+    }
+    closedir($handle);
+
+    // Sort.
+    asort($folders);
+    asort($files);
+
+    $list += $folders;
+    $list += $files;
+  }
+  return $list;
+}
+
+/**
+ * Parse .descript.ion file descriptions.
+ *
+ * Code adapted from filetree module.
+ */
+function _local_network_files_parse_description($dir) {
+  $descriptions = array();
+  if ( is_readable("$dir/.descript.ion") && ( $file = file("$dir/.descript.ion") ) ) {
+    foreach ( $file as $line ) {
+      $line = trim($line);
+      // Skip empty and commented lines
+      if ( $line == '' || strpos($line, '#') === 0 ) {
+        continue;
+      }
+      $matches = array();
+      // File names may be encapsulated in quotations.
+      if ( strpos($line, '"') === 0 ) {
+        preg_match('/^"([^"]+)"\s+(.*)$/', $line, $matches);
+      }
+      else {
+        preg_match('/^(\S+)\s+(.*)$/', $line, $matches);
+      }
+      list(, $name, $description) = $matches;
+      if ( isset($descriptions[$name]) ) {
+        $descriptions[$name] .= ' ' . trim($description);
+      }
+      else {
+        $descriptions[$name] = trim($description);
+      }
+    }
+  }
+  return $descriptions;
+}
+
+/**
+ * Determines which icon should be displayed, based on file extension.
+ *
+ * Code adapted from filetree module.
+ */
+function _local_network_files_icon($extension) {
+  $extension = strtolower($extension);
+  $icon = 'file';
+  $map = array(
+    'application' => array('exe'),
+    // 'code' => array(''),
+    'css' => array('css'),
+    'db' => array('sql'),
+    'doc' => array('doc', 'docx'),
+    'film' => array('avi', 'mov'),
+    'flash' => array('flv', 'swf'),
+    'html' => array('htm', 'html'),
+    // 'java' => array(''),
+    // 'linux' => array(''),
+    'music' => array('mp3', 'aac'),
+    'pdf' => array('pdf'),
+    'php' => array('php'),
+    'image' => array('jpg', 'jpeg', 'gif', 'png', 'bmp'),
+    'ppt' => array('ppt'),
+    'psd' => array('psd'),
+    // 'ruby' => array(''),
+    'script' => array('asp'),
+    'txt' => array('txt'),
+    'xls' => array('xls', 'xlsx'),
+    'zip' => array('zip'),
+  );
+  foreach ( $map as $key => $values ) {
+    if ( in_array($extension, $values) ) {
+      $icon = $key;
+      break;
+    }
+  }
+  return $icon;
+}
+
+/**
+ * Renders folder tree.
+ *
+ * Code adapted from filetree module.
+ */
+function theme_local_network_files_folder_tree($variables) {
+  $files = $variables['files'];
+  $params = $variables['params'];
+  $output = '';
+
+  // Render controls (but only if multiple folders is enabled, and only if
+  // there is at least one folder to expand/collapse).
+  if ( $params['multi'] && $params['controls'] ) {
+    $has_folder = FALSE;
+    foreach ( $files as $file ) {
+      if ( isset($file['children']) ) {
+        $has_folder = TRUE;
+        break;
+      }
+    }
+    if ( $has_folder ) {
+      $controls = array(
+        '<a href="#" class="expand">' . t('expand all') . '</a>',
+        '<a href="#" class="collapse">' . t('collapse all') . '</a>',
+      );
+      $output .= theme('item_list', array(
+        'items' => $controls,
+        'title' => NULL,
+        'type' => 'ul',
+        'attributes' => array('class' => 'controls',),
+      ));
+    }
+  }
+
+  // Render files.
+  $output .= theme('item_list', array(
+    'items' => $files,
+    'title' => NULL,
+    'type' => 'ul',
+    'attributes' => array('class' => 'files',),
+  ));
+
+  // Generate classes and unique ID for wrapper div.
+  $id = drupal_clean_css_identifier(uniqid('local-network-files-'));
+  $classes = array('local-network-files');
+  if ( $params['multi'] ) {
+    $classes[] = 'multi';
+  }
+
+  // If using animation, add class.
+  if ( $params['animation'] ) {
+    $classes[] = 'local-network-files-animation';
+  }
+
+  return '<div id="' . $id . '" class="' . implode(' ', $classes) . '">' . $output . '</div>';
+}

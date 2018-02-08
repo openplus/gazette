@@ -1,0 +1,46 @@
+diff --git a/js/calendar_colorpicker.js b/js/calendar_colorpicker.js
+index b9c94e3..5a12e4d 100644
+--- a/js/calendar_colorpicker.js
++++ b/js/calendar_colorpicker.js
+@@ -10,7 +10,24 @@
+ (function ($) {
+   Drupal.behaviors.field_example_colorpicker = {
+     attach: function(context) {
+-      $(".edit-calendar-colorpicker").live("focus", function(event) {
++      /**
++       * Check if a particular version of jQuery is greater than the current.
++       */
++      var isCompatible = function(version) {
++        var cur = $.fn.jquery.split('.');
++        var ver = version.split('.'); 
++        return isNewerThan(cur[0], ver[0]) && isNewerThan(cur[1], ver[1]);
++      }
++      /**
++       * Ensure int and compare a to b.
++       */
++      var isNewerThan = function(a,b) {
++        return parseInt(a) >= parseInt(b);
++      }
++      /**
++       * Focus event function.
++       */
++      var focus = function(event) {
+         var edit_field = this;
+         var picker = $(this).closest('div').parent().find(".calendar-colorpicker");
+ 
+@@ -20,7 +37,14 @@
+         $.farbtastic(picker, function(color) {
+           edit_field.value = color;
+         }).setColor(edit_field.value);
+-      });
++      }
++      // .live was deprecated in favor of .on in 1.7.x, and removed in 1.9.x. 
++      if (isCompatible('1.7.x')) {
++        $(".edit-calendar-colorpicker").on("focus", focus);
++      }
++      else {
++        $(".edit-calendar-colorpicker").live("focus", focus);
++      }
+     }
+   }
+ })(jQuery);

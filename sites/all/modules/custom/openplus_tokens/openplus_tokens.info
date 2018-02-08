@@ -1,0 +1,12 @@
+name = OpenPlus Tokens
+description = Provides custom tokens 
+core = 7.x
+package = OpenPlus 
+php = 5.2.4
+
+; Information added by  packaging script on 2013-12-03
+version = "7.x-1.0"
+core = "7.x"
+project = "openplus_tokens"
+datestamp = "1386547200"
+

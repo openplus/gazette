@@ -1,0 +1,136 @@
+<?php
+/**
+ * @file
+ * openplus_formatters.module
+ * Adds custom formatters
+ */
+
+/**
+ * Implements hook_field_formatter_info().
+ */
+function openplus_formatters_field_formatter_info() {
+  $formatters = array();
+  $formatters['css_format'] = array(
+    'label' => t('Render as CSS class'),
+    'description' => t('Display the as CSS - no caps, dashes instead of spaces, etc.'),
+    'field types' => array('text'),
+    'settings' => array(
+    ),
+  );
+  $formatters['notice_slave_links'] = array(
+    'label' => t('Link to slave notice'),
+    'description' => t('Link an issue number to a slave notice.'),
+    'field types' => array('entityreference'),
+    'settings' => array(
+    ),
+  );
+  $formatters['reception_no_link'] = array(
+    'label' => t('Link reception no to folder'),
+    'description' => t('Used to make IE open up a file share folder in explorer.'),
+    'field types' => array('number_integer'),
+    'settings' => array(
+    ),
+  );
+
+
+
+  return $formatters;
+}
+
+/**
+ * Implements hook_field_formatter_settings_form().
+ */
+function openplus_formatters_field_formatter_settings_form($field, $instance, $view_mode, $form, &$form_state) {
+  //This gets the view_mode where our settings are stored
+  $display = $instance['display'][$view_mode];
+  //This gets the actual settings
+  $settings = $display['settings'];
+  //Initialize the element variable
+  $element = array();
+  switch ($display['type']) {
+    case 'css_format':
+/*
+      $element['data_location'] = array(
+        '#title' => t('Data location'),
+        '#type' => 'textfield',
+        '#size' => 128,
+        '#description' => t('The country abbreviation for of the data'),
+        '#default_value' => $settings['data_location'],
+      );
+*/
+    break;
+    case 'notice_slave_links':
+    break;
+    case 'reception_no_link':
+    break;
+  }
+  return $element;
+}
+
+/**
+ * Implements hook_field_formatter_settings_summary().
+ */
+function openplus_formatters_field_formatter_settings_summary($field, $instance, $view_mode) {
+  $display = $instance['display'][$view_mode];
+  $settings = $display['settings'];
+  switch ($display['type']) {
+     case 'css_format':
+       $summary = t('Provides a formatter to render as CSS');
+     break;
+     case 'notice_slave_links':
+       $summary = t('Link issue number to slave notice');
+     break;
+     case 'reception_no_link':
+       $summary = t('Link reception number to folder');
+     break;
+  }
+  return $summary;
+}
+
+/**
+ * Implements hook_field_formatter_view().
+ */
+function openplus_formatters_field_formatter_view($entity_type, $entity, $field, $instance, $langcode, $items, $display) {
+  $element = array();
+  $settings = $display['settings']; // get the settings
+  global $language;
+
+  switch ($display['type']) {
+    case 'css_format':
+      module_load_include('inc', 'pathauto', 'pathauto');
+      foreach ($items as $delta => $item) {
+        $element[$delta]['#markup'] = 'theme-' . pathauto_cleanstring($item['value']);
+      }
+    break;
+    case 'notice_slave_links':
+      foreach ($items as $delta => $item) {
+        $issue = node_load($item['target_id']);
+        $slave_nid = openplus_get_slave_notice($item['target_id'], $entity->nid);
+        $element[$delta]['#markup'] = l($issue->title_field[$language->language][0]['safe_value'], 'node/' . $slave_nid);
+      }
+    break;
+    case 'reception_no_link':
+      $root = "\\\\vmware-host\Shared Folders\Windows7\GazData";
+      foreach ($items as $delta => $item) {
+        $link = '<a target="_blank" href="file:' . $root . "/" . $item['value'] . '">' . t('View production files') . '</a>';
+        $element[$delta]['#markup'] = $link; 
+      }
+    break;
+  }
+
+  return $element;
+}
+
+/**
+ * Implements hook_views_api().
+ */
+function openplus_formatters_views_api() {
+  return array(
+    'api' => 3,
+    'path' => drupal_get_path('module', 'openplus_formatters'),
+  );
+}
+
+function openplus_formatters_entity_views_field_handlers_alter(&$field_handlers) {
+  $field_handlers['text'] = 'openplus_formatters_handler_field_text';
+}

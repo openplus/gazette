@@ -1,0 +1,9 @@
+name = Gazette Bootstrap 2
+description = Subtheme for gazette based on WxT bootstrap
+base theme = wetkit_bootstrap
+core = 7.x
+
+; ========================================
+; Stylesheets
+; ========================================
+stylesheets[all][] = css/init.css

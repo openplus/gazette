@@ -1,0 +1,13 @@
+--- a/views/handler_field_saved_search_name.inc
++++ b/views/handler_field_saved_search_name.inc
+@@ -45,7 +45,9 @@ class SearchApiSavedSearchesViewsHandler
+         'query' => array(),
+         'absolute' => TRUE,
+       );
+-      $this->options['alter']['path'] = url($page['path'], $page);
++      // decode %## in the url as it will get re-encoded in views.
++      $url = urldecode(url($page['path'], $page));
++      $this->options['alter']['path'] = $url;
+     }
+   }
+ 

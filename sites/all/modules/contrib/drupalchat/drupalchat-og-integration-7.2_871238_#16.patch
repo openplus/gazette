@@ -1,0 +1,189 @@
+diff --git a/drupalchat.admin.inc b/drupalchat.admin.inc
+index 216d9ec..9cdce71 100644
+--- a/drupalchat.admin.inc
++++ b/drupalchat.admin.inc
+@@ -424,7 +424,9 @@ function drupalchat_settings_form($form, &$form_state) {
+     $form['drupalchat_chatlist_cont']['drupalchat_rel']['#options'][DRUPALCHAT_REL_FF] = t('Flag Friend module');
+   }
+   if (module_exists('og')) {
+-    $form['drupalchat_chatlist_cont']['drupalchat_rel']['#options'][DRUPALCHAT_REL_OG] = t('Organic Groups module');
++    $form['drupalchat_chatlist_cont']['drupalchat_rel']['#options'][DRUPALCHAT_REL_OG] = t('Organic Group members as buddies');
++    $form['drupalchat_chatlist_cont']['drupalchat_rel']['#options'][DRUPALCHAT_REL_OG_CHATROOM] = t('Organic Groups as chatrooms');
++    $form['drupalchat_chatlist_cont']['drupalchat_rel']['#options'][DRUPALCHAT_REL_OG_AND_CHATROOM] = t('Organic Group members as buddies and each og as chatroom');
+   }
+   $form['drupalchat_chatlist_cont']['drupalchat_ur_name'] = array(
+     '#type' => 'textfield',
+diff --git a/drupalchat.module b/drupalchat.module
+index e9a0d15..e51a248 100644
+--- a/drupalchat.module
++++ b/drupalchat.module
+@@ -17,7 +17,9 @@ define('DRUPALCHAT_USER_IDLE', 2);
+ define('DRUPALCHAT_REL_AUTH', 0);
+ define('DRUPALCHAT_REL_UR', 1);
+ define('DRUPALCHAT_REL_FF', 2);
+-define('DRUPALCHAT_REL_OG', 3);
++define('DRUPALCHAT_REL_OG', 3);  // Only og members as buddies
++define('DRUPALCHAT_REL_OG_CHATROOM', 4); // Each og as a separate chatroom
++define('DRUPALCHAT_REL_OG_AND_CHATROOM', 5); // Og members as buddies as well as each og as a separate chatroom
+ 
+ define('DRUPALCHAT_EXTERNAL_HOST', 'http://api'.variable_get('drupalchat_ext_d_i','3').'.iflychat.com');
+ define('DRUPALCHAT_EXTERNAL_PORT', '80');
+@@ -529,6 +531,15 @@ function drupalchat_init() {
+       'changeurl' => url('drupalchat/change-guest-name', array('query' => array('t' => time(),),)),
+       'allowSmileys' => variable_get('drupalchat_enable_smiley', 1),
+     );
++        if (variable_get('drupalchat_rel', DRUPALCHAT_REL_AUTH) == DRUPALCHAT_REL_OG_CHATROOM || variable_get('drupalchat_rel', DRUPALCHAT_REL_AUTH) == DRUPALCHAT_REL_OG_AND_CHATROOM) {
++          $groups = _drupalchat_get_groups($user->uid);
++          $groups[] = 0; // Adding public chat
++          foreach ($groups as $key => $group) {
++            $groups[$key] = 'c-' . $group;
++          }
++          $my_settings['chatrooms'] = $groups;
++        }
++
+     if($polling_method == DRUPALCHAT_AJAX) {
+       $my_settings['refresh_rate'] = variable_get('drupalchat_refresh_rate', 2);
+     }
+@@ -757,6 +768,11 @@ function drupalchat_poll() {
+   $initial_time = time();
+   $message_count = 0;
+ 
++  $groups = _drupalchat_get_groups($user->uid);
++  $groups[] = 0; // Adding public chat
++  foreach ($groups as $key => $group) {
++    $groups[$key] = 'c-' . $group;
++  }
+ 
+   /*if (isset($_GET['drupalchat_last_timestamp'])) {
+     $last_timestamp = check_plain($_GET['drupalchat_last_timestamp']);
+@@ -802,17 +818,18 @@ function drupalchat_poll() {
+       sleep(3);
+ 	  /*watchdog('drupalchat', '%a - %b - OLD - %c - CURRENT %e - %d', array('%a' => $user->uid, '%b' => time(), '%b' => time(), '%c' => print_r($buddylist_online_old,true), '%d' => print_r(_drupalchat_buddylist_diff($buddylist_online_old, $buddylist_online),true), '%e' => print_r($buddylist_online,true)), WATCHDOG_DEBUG);*/
+       $buddylist_online = _drupalchat_buddylist_online($buddylist);
++
+       //$message_count = db_query('SELECT COUNT(*) FROM {drupalchat_msg} m INNER JOIN {users} u ON m.uid1 = u.uid WHERE m.uid2 = :m.uid2 AND m.timestamp > :m.timestamp', array(':m.uid2' => $user->uid, ':m.timestamp' => $last_timestamp))->fetchField();
+       if($user->uid > 0) {
+ 	    $message_count = db_query(' SELECT COUNT(*)
+                                     FROM {drupalchat_msg} m
+-                                    WHERE (m.uid2 IN (:uid2,\'c-0\') OR m.uid1 = :uid2)
++                                    WHERE (m.uid2 IN (:uid2,\'' . implode('\', \'', $groups) . '\') OR m.uid1 = :uid2)
+                                     AND m.timestamp > :timestamp', array(':uid2' => $user->uid, ':timestamp' => $last_timestamp))->fetchField();
+       }
+ 	  else {
+ 	    $message_count = db_query(' SELECT COUNT(*)
+                                     FROM {drupalchat_msg} m
+-                                    WHERE (m.uid2 IN (:uid2,\'c-0\') OR m.uid1 = :uid2)
++                                    WHERE (m.uid2 IN (:uid2,\'' . implode('\', \'', $groups) . '\') OR m.uid1 = :uid2)
+                                     AND m.timestamp > :timestamp', array(':uid2' => '0-'._drupalchat_get_sid(), ':timestamp' => $last_timestamp))->fetchField();
+ 	  }
+ 	  _drupalchat_touch_user($user->uid);
+@@ -821,10 +838,10 @@ function drupalchat_poll() {
+   }
+   if (($message_count > 0) || ($polling_method == DRUPALCHAT_AJAX)) {
+     if($user->uid > 0) {
+-      $messages = db_query('SELECT m.message_id, m.uid1, m.uid2, m.message, m.timestamp FROM {drupalchat_msg} m WHERE (m.uid2 IN (:uid2,\'c-0\') OR m.uid1 = :uid2) AND m.timestamp > :timestamp ORDER BY m.timestamp ASC', array(':uid2' => $user->uid, ':timestamp' => $last_timestamp));
++      $messages = db_query('SELECT m.message_id, m.uid1, m.uid2, m.message, m.timestamp FROM {drupalchat_msg} m WHERE (m.uid2 IN (:uid2,\'' . implode('\', \'', $groups) . '\') OR m.uid1 = :uid2) AND m.timestamp > :timestamp ORDER BY m.timestamp ASC', array(':uid2' => $user->uid, ':timestamp' => $last_timestamp));
+     }
+ 	else {
+-	  $messages = db_query('SELECT m.message_id, m.uid1, m.uid2, m.message, m.timestamp FROM {drupalchat_msg} m WHERE (m.uid2 IN (:uid2,\'c-0\') OR m.uid1 = :uid2) AND m.timestamp > :timestamp ORDER BY m.timestamp ASC', array(':uid2' => '0-'._drupalchat_get_sid(), ':timestamp' => $last_timestamp));
++	  $messages = db_query('SELECT m.message_id, m.uid1, m.uid2, m.message, m.timestamp FROM {drupalchat_msg} m WHERE (m.uid2 IN (:uid2,\'' . implode('\', \'', $groups) . '\') OR m.uid1 = :uid2) AND m.timestamp > :timestamp ORDER BY m.timestamp ASC', array(':uid2' => '0-'._drupalchat_get_sid(), ':timestamp' => $last_timestamp));
+ 	}
+     //while ($message = db_fetch_object($messages)) {
+     // Drupal 7
+@@ -934,6 +951,28 @@ function _drupalchat_buddylist($uid) {
+       $uid == $friend->uid ? $users[] = $friend->friend_uid : $users[] = $friend->uid;
+     }
+   }
++  elseif ($drupalchat_rel == DRUPALCHAT_REL_OG || $drupalchat_rel == DRUPALCHAT_REL_OG_AND_CHATROOM) {
++    $user = user_load($uid);
++
++    // Create an array of all groups this user belongs to
++    $og_array = _drupalchat_get_groups($uid);
++
++    // Query the database for all users belonging to those groups
++    if (!empty($og_array)) {
++      $query = db_select('og_membership', 'ogm');
++      $query
++        ->fields('ogm', array('etid'))
++        ->condition('entity_type', 'user')
++        ->condition('gid', $og_array, 'IN')
++        ->condition('etid', $uid, '<>')
++        ->distinct();
++      $results = $query->execute()->fetchAllAssoc('etid');
++    }
++    // Create a flat array of user IDs
++    foreach ($results as $member) {
++      $users[] = $member->etid;
++    }
++  }
+   return $users;
+ }
+ 
+@@ -947,7 +986,24 @@ function _drupalchat_buddylist_online($buddylist) {
+ 	  $users['c-0']['p'] = $base_url . '/' . drupal_get_path('module', 'drupalchat') . '/themes/' . variable_get('drupalchat_theme', 'light') . '/images/default_room.png';
+ 	}
+   }
+-  if (variable_get('drupalchat_rel', DRUPALCHAT_REL_AUTH) > DRUPALCHAT_REL_AUTH) {
++  if (variable_get('drupalchat_rel', DRUPALCHAT_REL_AUTH) == DRUPALCHAT_REL_OG_CHATROOM || variable_get('drupalchat_rel', DRUPALCHAT_REL_AUTH) == DRUPALCHAT_REL_OG_AND_CHATROOM) {
++    $og_array = _drupalchat_get_groups($user->uid);
++
++    if(!empty($og_array)) {
++      $groups = db_select('node', 'n')
++        ->fields('n', array('nid', 'title'))
++        ->condition('nid', $og_array, 'IN')
++        ->execute()
++        ->fetchAllAssoc('nid');
++      foreach ($groups as $group) {
++        $users['c-' . $group->nid] = array('name' => t($group->title), 'status' => '1');
++        if(variable_get('drupalchat_user_picture', 1) == 1) {
++          $users['c-' . $group->nid]['p'] = $base_url . '/' . drupal_get_path('module', 'drupalchat') . '/themes/' . variable_get('drupalchat_theme', 'light') . '/images/default_room.png';
++        }
++      }
++    }
++  }
++  if (variable_get('drupalchat_rel', DRUPALCHAT_REL_AUTH) != DRUPALCHAT_REL_AUTH) {
+     // Return empty on an empty buddylist
+     if (empty($buddylist)) {
+       $users['total'] = 0;
+@@ -1523,8 +1579,8 @@ function drupalchat_get_thread_history() {
+         $current_uid = '0-'._drupalchat_get_sid();
+       }
+       
+-      if($chat_id == 'c-0') {
+-        $messages = db_query('SELECT m.message_id, m.uid1, m.uid2, m.message, m.timestamp FROM {drupalchat_msg} m WHERE m.uid2 = \'c-0\' ORDER BY m.timestamp DESC LIMIT 30', array(':uid1' => $current_uid, ':uid2' => $chat_id))->fetchAll();
++      if (substr($chat_id, 0, 2) == 'c-') {
++        $messages = db_query('SELECT m.message_id, m.uid1, m.uid2, m.message, m.timestamp FROM {drupalchat_msg} m WHERE m.uid2 = \'' . $chat_id . '\' ORDER BY m.timestamp DESC LIMIT 30', array(':uid1' => $current_uid, ':uid2' => $chat_id))->fetchAll();
+       }
+       else {
+         $messages = db_query('SELECT m.message_id, m.uid1, m.uid2, m.message, m.timestamp FROM {drupalchat_msg} m WHERE (m.uid2 = :uid2 AND m.uid1 = :uid1) OR (m.uid2 = :uid1 AND m.uid1 = :uid2) ORDER BY m.timestamp DESC LIMIT 30', array(':uid1' => $current_uid, ':uid2' => $chat_id))->fetchAll();
+@@ -1532,7 +1588,7 @@ function drupalchat_get_thread_history() {
+         
+       foreach ($messages as $message) {
+       //print_r($message);
+-        if((((!strpos($message->uid1,'-')) && ($message->uid1 != $user->uid)) || ((strpos($message->uid1,'-')) && ($message->uid1 != '0-'._drupalchat_get_sid()))) || ($message->uid2 == 'c-0')) {
++        if((((!strpos($message->uid1,'-')) && ($message->uid1 != $user->uid)) || ((strpos($message->uid1,'-')) && ($message->uid1 != '0-'._drupalchat_get_sid()))) || (substr($message->uid2, 0, 2) == 'c-')) {
+           if(!strpos($message->uid1,'-')) {
+             $account = user_load($message->uid1);
+           $temp_msg = array('message' => check_plain($message->message), 'timestamp' => date("H:i", $message->timestamp), 'uid1' => $message->uid1, 'name' => check_plain(format_username($account)), 'uid2' => $message->uid2, 'message_id' => check_plain($message->message_id),);
+diff --git a/js/drupalchat.js b/js/drupalchat.js
+index a74e8d6..e020bee 100644
+--- a/js/drupalchat.js
++++ b/js/drupalchat.js
+@@ -560,7 +560,7 @@ function drupalchatMain() {
+   			  drupalselfmessage = true;
+   			}
+   			//Add div if required.
+-  			if(value.uid2=="c-0") {
++  			if(value.uid2.substr(0, 2)=="c-") {
+   			  drupalchatroom = true;
+   			}
+               else {
+@@ -568,7 +568,7 @@ function drupalchatMain() {
+               }			
+   			chatboxtitle = (drupalchatroom || drupalselfmessage)?value.uid2:value.uid1;
+   			if (jQuery("#chatbox_"+chatboxtitle).length <= 0) {
+-  				createChatBox(chatboxtitle, drupalchatroom?"Public Chatroom":value.name, 1);
++  				createChatBox(chatboxtitle, drupalchatroom ? Drupal.settings.drupalchat.chatrooms[value.uid2] : value.name, 1);
+   			}
+   			else if (jQuery("#chatbox_"+chatboxtitle+" .subpanel").is(':hidden')) {
+   				if (jQuery("#chatbox_"+chatboxtitle).css('display') == 'none') {

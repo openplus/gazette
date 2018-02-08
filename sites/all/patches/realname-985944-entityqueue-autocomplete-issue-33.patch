@@ -1,0 +1,22 @@
+diff --git a/realname.module b/realname.module
+index a16be15..821fe02 100644
+--- a/realname.module
++++ b/realname.module
+@@ -330,7 +330,7 @@ function realname_autocomplete($field_name, $entity_type, $bundle_name, $string
+   $matches = array();
+ 
+   // User entityreference autocomplete fields.
+-  if ($instance['widget']['type'] == 'entityreference_autocomplete' && !empty($string)) {
++  if ($instance['widget']['type'] == 'entityqueue_dragtable' && !empty($string)) {
+     $query = db_select('users', 'u');
+     $query->leftJoin('realname', 'rn', 'u.uid = rn.uid');
+     $query->fields('u', array('uid', 'name'));
+@@ -407,7 +407,7 @@ function realname_autocomplete_access_callback($field_name, $entity_type, $bundl
+ function realname_field_widget_form_alter(&$element, &$form_state, $context) {
+   if ($context['field']['type'] == 'entityreference') {
+     if ($context['field']['settings']['target_type'] == 'user') {
+-      $element['target_id']['#autocomplete_path'] = 'realname/autocomplete/' . $context['field']['field_name'] . '/' . $context['instance']['entity_type'] . '/' . $context['instance']['bundle'];
++      $element['add']['entity']['#autocomplete_path'] = 'realname/autocomplete/' . $context['field']['field_name'] . '/' . $context['instance']['entity_type'] . '/' . $context['instance']['bundle'];
+     }
+   }
+ }

@@ -1,0 +1,15 @@
+diff --git a/drupalchat.module b/drupalchat.module
+index e9a0d15..a790699 100644
+--- a/drupalchat.module
++++ b/drupalchat.module
+@@ -994,6 +994,10 @@ function _drupalchat_buddylist_online($buddylist) {
+   if(variable_get('drupalchat_enable_chatroom', 1) == 1) {
+     $users['total']--;
+   }
++
++  // Allows other modules to alter this list
++  drupal_alter('drupalchat_buddylist_online', $users);
++
+   return $users;
+ }
+ 

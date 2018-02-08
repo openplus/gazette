@@ -1,0 +1,72 @@
+<?php
+/**
+ * @file
+ * openplus_tokens.module
+ */
+
+/**
+ * Implements hook_token_info().
+ */
+function openplus_tokens_token_info() {
+  $info = array();
+  $info['tokens']['node']['publication-title'] = array(
+    'name' => t('Formatted publication title.'),
+    'description' => t('Publication title formatted for node_view'),
+  );
+  $info['tokens']['node']['reception-no'] = array(
+    'name' => t('Automatically generate next reception number.'),
+    'description' => t('Reception number added on node create'),
+  );
+
+  return $info;
+}
+
+/**
+ * Implements hook_tokens().
+ */
+function openplus_tokens_tokens($type, $tokens, array $data = array(), array $options = array()) {
+  $replacements = array();
+  $language = $GLOBALS['language']->language;
+  if ($type == 'node' && isset($data['node'])) {
+    $node = $data['node'];
+    foreach ($tokens as $token => $original) {
+      $token_array = explode(':', $token);
+      switch ($token) {
+        case 'publication-title':
+          $type = field_get_items('node', $node, 'field_pub_type', NULL);
+          $vol = field_get_items('node', $node, 'field_volume', NULL);
+          $date = field_get_items('node', $node, 'field_issue_date', NULL);
+          $issue = field_get_items('node', $node, 'field_issue_no', NULL);
+          $extra = field_get_items('node', $node, 'field_is_extra', NULL);
+          $extra_no = field_get_items('node', $node, 'field_extra_no', NULL);
+          //$date = format_date($date[0]['value'], 'medium_custom', '', NULL, $language);
+          $date = format_date($date[0]['value'], 'short', '', NULL, $language);
+          $output = array(
+            t('Part @type', array('@type' => $type[0]['value'])),
+            t('Vol. @vol', array('@vol' => $vol[0]['value'])),
+          );
+          if (empty($extra[0]['value'])) {
+            $output[] = t('No. @issue', array('@issue' => $issue[0]['value']));
+          }
+          else {
+            $output[] = t('Extra No. @extra_no', array('@extra_no' => $extra_no[0]['value'])) ;
+          }
+          $replacements[$original] = t('Publication @date [@info]', array('@date' => $date, '@info' => implode(', ', $output)));
+        break;
+        case 'reception-no':
+          $query = db_select('field_data_field_reception_no', 'r');
+          $query->addExpression('MAX(field_reception_no_value)', 'max_no');
+          $result = $query->execute()->fetchObject();
+          if (!empty($result) && $result->max_no > 0) {
+            $replacements[$original] = $result->max_no + 1;
+          }
+          else {
+            $replacements[$original] = 32001;  // for the very first notice created @TODO move to setting in UI
+          }
+        break;
+      }
+    }
+  }
+  return !empty($replacements) ? $replacements : NULL;
+}
+

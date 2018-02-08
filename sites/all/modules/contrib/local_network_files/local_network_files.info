@@ -1,0 +1,15 @@
+name = Local Network Files
+description = Field that stores local / network files and displays them with optional links, or stores local / network file paths and displays the files and folders as a tree structure.
+package = Fields
+core = 7.x
+dependencies[] = field
+dependencies[] = token
+scripts[] = local_network_files.js
+stylesheets[all][] = local_network_files.css
+
+; Information added by Drupal.org packaging script on 2014-12-19
+version = "7.x-1.x-dev"
+core = "7.x"
+project = "local_network_files"
+datestamp = "1418958181"
+

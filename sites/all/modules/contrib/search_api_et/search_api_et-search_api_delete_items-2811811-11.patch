@@ -1,0 +1,29 @@
+diff --git a/search_api_et.module b/search_api_et.module
+index cd0e1ea..3b27ccd 100644
+--- a/search_api_et.module
++++ b/search_api_et.module
+@@ -310,9 +310,21 @@ function search_api_et_entity_delete($entity, $entity_type) {
+     return;
+   }
+ 
+-  list($entity_id, $revision, $bundle) = entity_extract_ids($entity_type, $entity);
+-  // Passing the EntityID only, so every index can properly handle their translations.
+-  search_api_track_item_delete(SearchApiEtHelper::getItemType($entity_type), array($entity_id));
++  $item_ids = [];
++  $langs = language_list();
++
++  // On delete, remove all translations  of the entity from the index.
++  if (isset($entity->translations)) {
++    list($entity_id, $revision, $bundle) = entity_extract_ids($entity_type, $entity);
++    foreach ($langs as $id => $lang) {
++      if ($lang->enabled == 1) {
++        $item_ids[] = SearchApiEtHelper::buildItemId($entity_id, $lang->language);
++      }
++    }
++  }
++  if (!empty($item_ids)) {
++    search_api_track_item_delete(SearchApiEtHelper::getItemType($entity_type), $item_ids);
++  }
+ }
+ 
+ /**

@@ -1,0 +1,13 @@
+<?php
+/**
+ * @file Replicate helpers.
+ *
+ * Provides rules action and ctools relation to replicate entities.
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function replicate_helpers_ctools_plugin_directory($owner, $plugin_type) {
+  return "$owner/$plugin_type";
+}

@@ -1,0 +1,19 @@
+<?php
+/**
+ * @file
+ * Install, update, and uninstall functions for the local_network_files module.
+ */
+
+/**
+ * Implements hook_field_schema().
+ */
+function local_network_files_field_schema($field) {
+  $columns = array(
+    'path' => array('type' => 'text', 'size' => 'normal', 'not null' => FALSE),
+  );
+  $indexes = array();
+  return array(
+    'columns' => $columns,
+    'indexes' => $indexes,
+  );
+}

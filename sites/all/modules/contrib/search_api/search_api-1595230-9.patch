@@ -1,0 +1,73 @@
+diff --git a/contrib/search_api_views/includes/handler_filter_date.inc b/contrib/search_api_views/includes/handler_filter_date.inc
+index c789724..1a4b096 100644
+--- a/contrib/search_api_views/includes/handler_filter_date.inc
++++ b/contrib/search_api_views/includes/handler_filter_date.inc
+@@ -81,23 +81,32 @@ class SearchApiViewsHandlerFilterDate extends SearchApiViewsHandlerFilter {
+       }
+     }
+   }
+
+   /**
+    * Provide a form for setting the filter value.
+    */
+   public function value_form(&$form, &$form_state) {
+     parent::value_form($form, $form_state);
+
++    $is_date_popup = ($this->options['widget_type'] == 'date_popup' && module_exists('date_popup'));
++
++    // If the operator is between
++    if ($this->operator == 'between') {
++      if ($is_date_popup) {
++        $form['value']['min']['#type'] = 'date_popup';
++        $form['value']['max']['#type'] = 'date_popup';
++      }
++    }
+     // If we are using the date popup widget, overwrite the settings of the form
+     // according to what date_popup expects.
+-    if ($this->options['widget_type'] == 'date_popup' && module_exists('date_popup')) {
++    elseif ($is_date_popup) {
+       $form['value']['#type'] = 'date_popup';
+       $form['value']['#date_format'] =  $this->options['date_popup_format'];
+       $form['value']['#date_year_range'] = $this->options['year_range'];
+       unset($form['value']['#description']);
+     }
+     elseif (empty($form_state['exposed'])) {
+       $form['value']['#description'] = t('A date in any format understood by <a href="@doc-link">PHP</a>. For example, "@date1" or "@date2".', array(
+         '@doc-link' => 'http://php.net/manual/en/function.strtotime.php',
+         '@date1' => format_date(REQUEST_TIME, 'custom', 'Y-m-d H:i:s'),
+         '@date2' => 'now + 1 day',
+@@ -108,22 +117,31 @@ class SearchApiViewsHandlerFilterDate extends SearchApiViewsHandlerFilter {
+   /**
+    * Add this filter to the query.
+    */
+   public function query() {
+     if ($this->operator === 'empty') {
+       $this->query->condition($this->real_field, NULL, '=', $this->options['group']);
+     }
+     elseif ($this->operator === 'not empty') {
+       $this->query->condition($this->real_field, NULL, '<>', $this->options['group']);
+     }
+-    else {
+-      while (is_array($this->value)) {
+-        $this->value = $this->value ? reset($this->value) : NULL;
++    elseif ($this->operator === 'between') {
++      if (isset($this->value[0]['min']) && isset($this->value[0]['max']) && $this->value[0]['max'] > 0 ) {
++
++        $min = is_numeric($this->value[0]['min']) ? $this->value[0]['min'] : strtotime($this->value[0]['min'], REQUEST_TIME);
++        $max = is_numeric($this->value[0]['max']) ? $this->value[0]['max'] : strtotime($this->value[0]['max'], REQUEST_TIME);
++        if ($min !== FALSE && $max !== FALSE) {
++          $this->query->condition($this->real_field, array($min, $max), 'BETWEEN', $this->options['group']);
++        }
+       }
++    }
++    else {
++      $this->value = isset($this->value[0]) ? $this->value[0]['value'] : $this->value['value'];
++
+       $v = is_numeric($this->value) ? $this->value : strtotime($this->value, REQUEST_TIME);
+       if ($v !== FALSE) {
+         $this->query->condition($this->real_field, $v, $this->operator, $this->options['group']);
+       }
+     }
+   }
+
+ }

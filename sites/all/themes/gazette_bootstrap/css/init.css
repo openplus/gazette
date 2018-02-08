@@ -1,0 +1,8 @@
+#wb-sm .menu {
+float:left; width:auto;
+}
+
+#wb-sm .menu.secondary {
+ width:auto;
+ float:right;
+}

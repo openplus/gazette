@@ -1,0 +1,14 @@
+name = Openplus Panel Layouts
+description = Provides custom and responsive panel layouts. 
+core = 7.x
+package = OpenPlus
+php = 5.2.4
+dependencies[] = panels
+dependencies[] = ctools
+stylesheets[all][] = css/openplus_layouts.css
+
+; Information added by  packaging script on 2013-12-03
+version = "7.x-1.0"
+core = "7.x"
+project = "openplus_layouts"
+datestamp = "1386547200"

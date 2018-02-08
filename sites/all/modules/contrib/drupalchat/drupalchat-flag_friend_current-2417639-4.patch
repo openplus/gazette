@@ -1,0 +1,29 @@
+diff --git a/drupalchat.module b/drupalchat.module
+index e9a0d15..e7b90b7 100644
+--- a/drupalchat.module
++++ b/drupalchat.module
+@@ -910,9 +910,9 @@ function _drupalchat_get_buddylist($uid, $drupalchat_ur_name = NULL) {
+     $fid = '1';
+     $final_list[$fid]['name'] = 'friend';
+     $final_list[$fid]['plural'] = 'friends';
+-    $result = db_query("SELECT * FROM {flag_friend} WHERE uid = :uid OR friend_uid = :uid", array(':uid' => $uid, ':friend_uid' => $uid));
++    $result = db_query("SELECT * FROM {flag_friend} WHERE uid = :uid", array(':uid' => $uid));
+     foreach ($result as $friend) {
+-      ($uid == $friend->uid) ? $final_list[$fid]['valid_uids'][] = $friend->friend_uid : $final_list[$fid]['valid_uids'][] = $friend->uid;
++      $final_list[$fid]['valid_uids'][] = $friend->entity_id;
+     }
+   }
+   return $final_list;
+@@ -928,10 +928,10 @@ function _drupalchat_buddylist($uid) {
+     }
+   }
+   elseif ($drupalchat_rel == DRUPALCHAT_REL_FF) {
+-    $result = db_query("SELECT * FROM {flag_friend} WHERE uid = :uid OR friend_uid = :uid", array(':uid' => $uid, ':friend_uid' => $uid));
++    $result = db_query("SELECT * FROM {flag_friend} WHERE uid = :uid", array(':uid' => $uid));
+     
+     foreach ($result as $friend) {
+-      $uid == $friend->uid ? $users[] = $friend->friend_uid : $users[] = $friend->uid;
++      $users[] = $friend->entity_id;
+     }
+   }
+   return $users;

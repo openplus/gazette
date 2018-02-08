@@ -1,0 +1,30 @@
+/* body { padding-left:200px; padding-top: 60px;
+  main { background: transparent;   font-size: 1.1em; line-height: 1.6em; margin-top:30px; }
+  .panel-pane.pane-panels-mini .panel-pane { background:$white; box-shadow: 0 1px 1px rgba(0,0,0,0.05);
+    .pane-title { display: block; border-bottom: 1px solid $lgt; padding:15px; margin:0; }
+    .pane-content { padding:15px; }
+  }
+  .panel-pane.pane-page-title { background:transparent; box-shadow: none;
+    .pane-content { padding:0; }
+  }
+  &.page-node {
+    .right { margin-top: 30px; }
+  }
+  .openplus-75-25 {
+    .left {
+      .inner { background:$white; overflow: hidden; box-shadow: 0 1px 1px rgba(0,0,0,0.05); margin-bottom: 20px; padding:15px; }
+    }
+    .right { @extend %sidebar-list;
+      .inner {
+        .flag {   display: block; @include transition(all 0.3s ease-in-out); text-decoration: none; font-weight: 700; margin: -15px -15px -40px -15px; padding: 15px; background: $drk-blue; color: $lgt-blue;
+          &:hover { background:$drk-blue3; color:$white; }
+        }
+        .panel-pane { background:$white; box-shadow: 0 1px 1px rgba(0,0,0,0.05); margin-bottom: 30px;
+          .pane-title { display: block; border-bottom: 1px solid $lgt; padding:15px; margin:0; }
+          .pane-content { padding:15px; }
+        }
+      }
+    }
+  }
+}
+ */

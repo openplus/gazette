@@ -1,0 +1,12 @@
+name = Custom Search API Widget 
+description = Provides a custom search panels widget 
+core = 7.x
+version = 7.x-1.x-dev
+package = Other 
+dependencies[] = ctools
+
+
+; Information added by drush on 2016-01-25
+version = "7.x-1.x-dev"
+project = "custom_search_api_widget"
+datestamp = "1453748348"

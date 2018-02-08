@@ -1,0 +1,22 @@
+/* nav#wb-sm { position: fixed; top:0; left:0; width:200px; height: 100%; z-index: 9; padding: 10px 0; background:$drk-blue;
+	.container { width: 100%; }
+	ul.menu { text-shadow: none;
+		&>li { float: none; display: block; clear: both;
+			&>a { padding:10px 20px; font-weight: 700; @include transition(all 0.3s ease-in-out); text-align: left; position: relative; display: block; border:none; color:$lgt-blue;
+				&.wb-navcurr { background:$drk-blue2; color:$white;
+					&:hover { background:$drk-blue2; color:$white; }
+				}
+				&:hover { background:$drk-blue3; color:$white; }
+			}
+			&:last-child {
+				a { border-right:0; }
+			}
+		}
+	}
+	ul.menu.secondary { position: absolute; bottom:0; left:0; width: 100%; }
+	.logo {	width: 100%; float: left; text-align: center; box-shadow: -3px 1px 10px rgba(0,0,0,0.4); padding: 10px 0; margin-bottom: 10px;
+		object, img { width: 80%;}
+	}
+
+}
+ */

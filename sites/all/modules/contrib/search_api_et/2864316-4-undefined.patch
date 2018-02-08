@@ -1,0 +1,27 @@
+diff --git a/search_api_et.module b/search_api_et.module
+index cd0e1ea..67329cd 100644
+--- a/search_api_et.module
++++ b/search_api_et.module
+@@ -329,13 +329,15 @@ function search_api_et_entity_update($entity, $entity_type) {
+   $et_entity_type = SearchApiEtHelper::getItemType($entity_type);
+ 
+   $language = entity_language($entity_type, $entity);
+-  $old_language = entity_language($entity_type, $entity->original);
+-
+-  // Check if the Entity language has been changed.
+-  if (!empty($language) && !empty($old_language)) {
+-    // If the Entity language has changed, remove the old tracked Item from the index.
+-    if ($language != $old_language) {
+-      search_api_track_item_delete($et_entity_type, array(SearchApiEtHelper::buildItemId($entity_id, $old_language)));
++  if (isset($entity->original) && is_object($entity->original)) {
++    $old_language = entity_language($entity_type, $entity->original);
++
++    // Check if the Entity language has been changed.
++    if (!empty($language) && !empty($old_language)) {
++      // If the Entity language has changed, remove the old tracked Item from the index.
++      if ($language != $old_language) {
++        search_api_track_item_delete($et_entity_type, array(SearchApiEtHelper::buildItemId($entity_id, $old_language)));
++      }
+     }
+   }
+ 

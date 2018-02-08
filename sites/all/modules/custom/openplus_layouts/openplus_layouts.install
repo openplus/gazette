@@ -1,0 +1,19 @@
+<?php
+/**
+ * @file
+ * openplus_layouts.install
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function openplus_layouts_uninstall() {
+  // Get global variable array.
+  global $conf;
+  foreach (array_keys($conf) as $key) {
+    // Find variables that have the module prefix.
+    if (strpos($key, 'openplus_layouts_') === 0) {
+      variable_del($key);
+    }
+  }
+}

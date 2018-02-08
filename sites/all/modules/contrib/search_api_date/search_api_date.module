@@ -1,0 +1,19 @@
+<?php
+
+/**
+ * @file
+ * Search API Date.
+ */
+
+/**
+ * Implements hook_search_api_processor_info().
+ */
+function search_api_date_search_api_processor_info() {
+  $callbacks['date_processor'] = array(
+    'name'        => t('Date processor'),
+    'description' => t('This processor gives you the ability to alter date field and use the date part only.'),
+    'class'       => 'SearchApiDateProcessor',
+  );
+
+  return $callbacks;
+}

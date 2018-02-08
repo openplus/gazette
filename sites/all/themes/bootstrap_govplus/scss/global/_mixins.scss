@@ -1,0 +1,143 @@
+///////////////////////////////////////////
+// Mixin for Footer Social button colors //
+///////////////////////////////////////////
+@mixin buttons($property) {
+    $colors:( facebook $facebook-c, youtube $youtube-c, twitter $twitter-c, flickr $flickr-c, subscribe $subscribe-c);
+    @each $color in $colors {
+        .#{nth($color, 1)} { #{$property}: nth($color, 2); @include icon('$'+ nth($color, 1));
+            &:hover { #{$property}: darken(nth($color, 2), 10); }
+        }
+    }
+}
+// Call the buttons mixins
+// @include buttons(background);
+
+
+
+////////////////////////
+// Breakpoints Mixins //
+////////////////////////
+@mixin bp($p) {
+  @if $p == l {
+    @media (min-width: 1200px){ @content; }
+  }
+  @else if $p == m {
+    @media (min-width: 992px) and (max-width: 1199px){ @content; }
+  }
+  @else if $p == s {
+    @media (min-width: 768px) and (max-width: 991px)  { @content; }
+  }
+  @else if $p == xs {
+    @media (max-width: 767px)  { @content; }
+  }
+}
+// This is the proper usage of breakpoints plugin
+// .container { width: 800px;
+//     @include bp(l) { width: 700px;}
+//     @include bp(m) { width: 500px;}
+//     @include bp(s) { width: 300px;}
+//     @include bp(xs) { width: 100px;}
+// }
+
+
+//////////////////////////
+// Border Radius Mixins //
+//////////////////////////
+@mixin br($radius) {
+  -webkit-border-radius: $radius;
+  border-radius: $radius;
+  background-clip: padding-box;
+}
+@mixin br-top($radius) {
+  -webkit-border-top-right-radius: $radius;
+  border-top-right-radius: $radius;
+   -webkit-border-top-left-radius: $radius;
+   border-top-left-radius: $radius;
+   background-clip: padding-box;
+}
+@mixin br-right($radius) {
+  -webkit-border-bottom-right-radius: $radius;
+  border-bottom-right-radius: $radius;
+     -webkit-border-top-right-radius: $radius;
+     border-top-right-radius: $radius;
+     background-clip: padding-box;
+}
+@mixin br-bottom($radius) {
+  -webkit-border-bottom-right-radius: $radius;
+  border-bottom-right-radius: $radius;
+   -webkit-border-bottom-left-radius: $radius;
+   border-bottom-left-radius: $radius;
+   background-clip: padding-box;
+}
+@mixin br-left($radius) {
+  -webkit-border-bottom-left-radius: $radius;
+  border-bottom-left-radius: $radius;
+     -webkit-border-top-left-radius: $radius;
+     border-top-left-radius: $radius;
+     background-clip: padding-box;
+}
+
+
+
+///////////////////
+// Bouncing Mixin //
+///////////////////
+@-webkit-keyframes bouncedelay {
+  0%, 80%, 100% { -webkit-transform: scale(0.0) }
+  40% { -webkit-transform: scale(1.0) }
+}
+
+@keyframes bouncedelay {
+  0%, 80%, 100% {
+    transform: scale(0.0);
+    -webkit-transform: scale(0.0);
+  } 40% {
+    transform: scale(1.0);
+    -webkit-transform: scale(1.0);
+  }
+}
+
+///////////////////
+// Opacity Mixin //
+///////////////////
+@mixin opacity($opacity) {
+  opacity: $opacity;
+  $opacity-ie: $opacity * 100;
+  filter: alpha(opacity=$opacity-ie); //IE8
+}
+// Usage for opacity
+// @include opacity(0.8);
+
+
+
+///////////////////////////////////
+// Clearfix Function / extention //
+///////////////////////////////////
+%clearfix {
+    &:before,
+    &:after {
+        content: "";
+        display: table;
+    }
+    &:after {
+        clear: both;
+    }
+}
+
+%sidebar-list {
+  ul { margin:0; padding:0; list-style:none;
+    li { border-bottom:1px solid $lgt-blue;
+      a { padding:8px; display: block; text-decoration: none; }
+      &:first-child {
+        a { padding-top: 0; }
+      }
+      &:last-child { border-bottom:none;
+        a { padding-bottom:0; }
+      }
+    }
+  }
+}
+
+%btn { background:$blue !important; color:$white  !important;
+  &:hover { background:$drk-blue  !important; color:$white  !important;  }
+}

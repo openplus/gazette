@@ -1,0 +1,9 @@
+/*
+ * To install:
+ *   1. enable this module
+ *   2. go to a panels page
+ *   3. select the region in which to pace the search box
+ *   4. select the gear and choose add content
+ *   5. under 'Widgets' choose custom search form
+ *   6. fill in the boxes and viola!
+ */

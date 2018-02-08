@@ -1,0 +1,12 @@
+name = Replicate Helpers
+description = Provides rules action and ctools relation to replicate entities.
+package = Rules
+core = 7.x
+dependencies[] = replicate
+
+; Information added by Drupal.org packaging script on 2016-08-13
+version = "7.x-1.0"
+core = "7.x"
+project = "replicate_helpers"
+datestamp = "1471084156"
+

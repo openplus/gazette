@@ -1,0 +1,36 @@
+name = GovPlus
+description = Please provide a description for your theme.
+base theme = wetkit_bootstrap
+core = 7.x
+
+; ========================================
+; Regions
+; ========================================
+regions[navigation] = Navigation
+regions[header] = Top Bar
+regions[highlighted] = Highlighted
+regions[help] = Help
+regions[content] = Content
+regions[sidebar_first] = Primary
+regions[sidebar_second] = Secondary
+regions[slideout_menu] = Slideout Menu
+regions[footer] = Footer
+regions[page_top] = Page top
+regions[page_bottom] = Page bottom
+
+; ========================================
+; Stylesheets
+; ========================================
+stylesheets[all][] = css/AdminLTE.min.css
+stylesheets[all][] = css/init.css
+stylesheets[all][] = css/newchanges.css
+
+; ========================================
+; Scripts
+; ========================================
+scripts[] = js/jquery-ui.min.js
+scripts[] = js/min/jquery.selectBoxIt.min.js
+scripts[] = js/bootstrap-popover.js
+scripts[] = js/clipboard.min.js
+scripts[] = js/min/init-min.js
+scripts[] = js/init2.js

@@ -1,0 +1,19 @@
+diff --git a/search_api_et.module b/search_api_et.module
+index 25712a1..91099ef 100644
+--- a/search_api_et.module
++++ b/search_api_et.module
+@@ -311,8 +311,12 @@ function search_api_et_entity_delete($entity, $entity_type) {
+   }
+
+   list($entity_id, $revision, $bundle) = entity_extract_ids($entity_type, $entity);
+-  // Passing the EntityID only, so every index can properly handle their translations.
+-  search_api_track_item_delete(SearchApiEtHelper::getItemType($entity_type), array($entity_id));
++  $language = entity_language($entity_type, $entity);
++  if (!empty($language)) {
++    $item_id = $entity_id . '/' . $language;
++    // Passing the ItemID, so SearchAPI can properly delete the item from server.
++    search_api_track_item_delete(SearchApiEtHelper::getItemType($entity_type), array($item_id));
++  }
+ }
+
+ /**

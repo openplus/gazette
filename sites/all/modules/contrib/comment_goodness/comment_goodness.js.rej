@@ -1,0 +1,51 @@
+--- comment_goodness.js
++++ comment_goodness.js
+@@ -2,15 +2,40 @@
+ 
+ Drupal.behaviors.comment_goodness = {
+   attach: function (context) {
+-    $('form.comment-form div.field-name-comment-body div.text-format-wrapper iframe:not(.cgprocessed)').on('mouseover', function () {
+-      var $this = $(this);
+-      $this.addClass('cgprocessed');
+-      var ctx = $this.parents('div.text-format-wrapper');
+-      var textarea = $('textarea', ctx);
+-      $this.contents().find('html').bind('blur keyup paste', function () {
+-        var text = $('body', $(this)).text();
+-        textarea.val(text).keyup();
++    // Compatibility for Drupal 7 core (jQuery 1.4.4) and later versions. The
++    // live() function was removed in jQuery 1.9, but on() was only added in
++    // 1.6.
++    var elements = $('form.comment-form div.field-name-comment-body div.text-format-wrapper iframe:not(.cgprocessed)');
++    // jQuery >= 1.6 can use this ...
++    if (typeof elements.on === 'function') {
++      $('form.comment-form div.field-name-comment-body div.text-format-wrapper').on('mouseover focus', 'iframe:not(.cgprocessed)', null, function() {
++        Drupal.behaviors.comment_goodness.handleEditors($(this));
++      })
++    }
++    // jQuery < 1.6
++    else if (typeof elements.live === 'function') {
++      elements.live('mouseover focus', function () {
++        Drupal.behaviors.comment_goodness.handleEditors($(this));
+       });
++    }
++  },
++
++  /**
++   * Applies the same handling for plain textareas applies to WYSIWYG editors.
++   *
++   * States are used to disable the submit buttons on empty comment forms, but
++   * this doesn't quite work for WYSIWYG editors.  This code adds the same
++   * handling for WYSIWYG editors.  The addition is a little awkward due to the
++   * iframe not being present in the DOM initially, so the mouseover and focus
++   * events are used to workaround this.
++   */
++  handleEditors: function($this) {
++    $this.addClass('cgprocessed');
++    var ctx = $this.parents('div.text-format-wrapper');
++    var textarea = $('textarea', ctx);
++    $this.contents().find('html').bind('blur keyup paste', function () {
++      var text = $('body', $(this)).text();
++      textarea.val(text).keyup();
+     });
+   }
+ };

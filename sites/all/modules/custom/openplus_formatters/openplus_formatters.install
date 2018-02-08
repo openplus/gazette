@@ -1,0 +1,19 @@
+<?php
+/**
+ * @file
+ * openplus_formatters.install
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function openplus_formatters_uninstall() {
+  // Get global variable array.
+  global $conf;
+  foreach (array_keys($conf) as $key) {
+    // Find variables that have the module prefix.
+    if (strpos($key, 'openplus_formatters_') === 0) {
+      variable_del($key);
+    }
+  }
+}

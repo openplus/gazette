@@ -1,0 +1,307 @@
+<?php
+/**
+ * @file
+ * openplus.module
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function openplus_ctools_plugin_directory($owner, $plugin_type) {
+  if ($owner == 'ctools') {
+    return "plugins/$plugin_type";
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function openplus_form_alter(&$form, &$form_state, $form_id) {
+  switch($form_id) {
+    case 'notice_node_form':
+      if (!empty($form['nid']['#value'])) {
+        $node = $form['#node'];
+        $pub = isset($node->field_pub_no[LANGUAGE_NONE][0]['target_id']) ? node_load($node->field_pub_no[LANGUAGE_NONE][0]['target_id']) : NULL;
+        if (!empty($node->field_repeat_master) && !empty($node->field_repeat_master[LANGUAGE_NONE][0]['target_id'])) {
+          $form['field_repeat_issues']['#disabled'] = 'disabled';
+          $form['field_client_onhold']['#disabled'] = 'disabled';
+          $form['field_publishing_state']['#disabled'] = 'disabled';
+          drupal_set_message(t('This notice is a repeat - workflow fields have been disabled.'));
+        }
+      }
+      else {
+        // disable repeat configs on node creation 
+        // @TODO need to move presave code to hook_update to support this in production app
+        $form['field_repeat_issues']['#disabled'] = 'disabled';
+        $query = drupal_get_query_parameters();
+        $pub = isset($query['field_pub_no']) ? node_load($query['field_pub_no']) : NULL;
+      }
+      
+      if (!empty($pub)) {
+        $type = $pub->field_pub_type[LANGUAGE_NONE][0]['value'];
+        if ($type == 1) {
+          $form['field_sor_si']['#access'] = FALSE;
+          $form['field_identification_no']['#access'] = FALSE;
+          $form['field_justice_identification']['#access'] = FALSE;
+        }
+        else {
+          $form['field_category']['#access'] = FALSE;
+          $form['field_notice_sub_type']['#access'] = FALSE;
+          $form['field_notice_type']['#access'] = FALSE;
+          $form['field_approval_required']['#access'] = FALSE;
+          $form['field_approved']['#access'] = FALSE;
+          $form['field_tbs_date']['#access'] = FALSE;
+        }
+      }
+    break;
+  }
+}
+
+/**
+ * Alter the node before saving a clone.
+ *
+ */
+function openplus_replicate_entity_alter(&$replica, $entity_type, $original) {
+  if ($entity_type == 'node' && $replica->type == 'notice') {
+    $replica->field_notice_part[LANGUAGE_NONE][0]['value'] = openplus_get_next_part($original->nid);
+    // set the parent nid value if we are replicating the parent
+    if (!isset($original->field_parent_notice[LANGUAGE_NONE][0]['target_id']) || empty($original->field_parent_notice[LANGUAGE_NONE][0]['target_id'])) {
+      $replica->field_parent_notice[LANGUAGE_NONE][0]['target_id'] = $original->nid;
+    }
+  }
+}
+
+function openplus_get_next_part($nid) {
+  $query = db_select('field_data_field_parent_notice', 'p');
+  $query->condition('p.field_parent_notice_target_id', $nid);
+  $query->fields('p', array('entity_id'));
+  $result = $query->execute();
+  $children = array();
+  foreach ($result as $child) {
+    $children[] = $child->entity_id;
+  }
+  if (!empty($children)) {
+    // need children in an array?
+    $query = db_select('field_data_field_notice_part', 'np');
+    $query->condition('np.entity_id', $children, 'IN');
+    $query->addExpression('MAX(field_notice_part_value)', 'max_part');
+    $result = $query->execute()->fetchObject();
+    $next_part = $result->max_part + 1; 
+  }
+  else {
+    $next_part = 2;
+  }
+
+  return $next_part;
+}
+
+function openplus_views_query_alter(&$view, &$query) {
+  if ($view->name == 'workflow_transitions' || $view->name == 'calendar_transitions') {
+    $query->where['date']['conditions'][0]['field'] = str_replace('timestamp', 'stamp', $query->where['date']['conditions'][0]['field']);
+  }
+}
+
+/**
+ * Implements hook_node_presave().
+ */
+function openplus_node_presave($node) {
+  // Always set translation status to published since we don't use this workflow
+  if (isset($node->translations)) {
+    if (isset($node->translations->data['en'])) {
+      $node->translations->data['en']['status'] = 1;
+    }
+    if (isset($node->translations->data['fr'])) {
+      // this is a node save
+      $node->translations->data['fr']['status'] = 1;
+    }
+  }
+
+  if ($node->type == 'publication') {
+    $title = token_replace('[node:publication-title]', array('node' => $node));
+    $node->title = $title; 
+    $node->title_field['en'][0]['value'] = $title; 
+    $node->title_field['fr'][0]['value'] = $title; 
+  }
+  if ($node->type == 'notice') {
+    if ($node->translations->original == 'en') {
+      $lang = 'en';
+      $trans = 'fr';
+    }
+    else {
+      $lang = 'fr';
+      $trans = 'en';
+    }
+    if (count($node->translations->data) != 2) {
+      // this is a new node
+      $node->translations->data[$trans] = array(
+        'language' => $trans,
+        'source' => $lang,
+        'status' => 1,
+        'uid' => 1,
+        'created' => time(),
+      );
+    }
+    // set the multilingual title field
+    $node->title_field['en'][0]['value'] = isset($node->field_title_en[LANGUAGE_NONE][0]['value']) ? $node->field_title_en[LANGUAGE_NONE][0]['value'] : NULL;
+    $node->title_field['fr'][0]['value'] = isset($node->field_title_fr[LANGUAGE_NONE][0]['value']) ? $node->field_title_fr[LANGUAGE_NONE][0]['value'] : NULL;
+    $node->title = isset($node->field_title_en[LANGUAGE_NONE][0]['value']) ? $node->field_title_en[LANGUAGE_NONE][0]['value'] : $node->title;
+    openplus_notice_repeat_update($node);
+  }
+
+}
+
+/**
+ * Helper function to retrieve workflow history
+ */
+function openplus_workflow_history($sid, $uid, $start, $end) {
+  $query = db_select('workflow_node_history', 'h');
+  $query->condition('h.sid', $sid);
+  $query->condition('h.uid', $uid);
+  $query->condition('h.stamp', $start, '>=');
+  $query->condition('h.stamp', $end, '<');
+  $query->fields('h', array('sid'));
+
+  $result = $query->execute()->rowCount();
+  return $result;
+}
+
+/**
+ * Helper function for charting
+ */
+function openplus_build_ranges($num_weeks) {
+  $ranges = array();
+  $today = strtotime('This Friday');
+  $seconds  = 604800;
+  for ($i = 0; $i < $num_weeks; $i++) {
+    $end = $today - $i * $seconds;
+    $start = $today - ($i + 1) * $seconds;
+    $ranges[] = array('start' => $start, 'end' => $end);
+  }
+ 
+  return $ranges;
+}
+
+/**
+ * Handle creating / updating / deleting repeats (slaves)
+ */
+function openplus_notice_repeat_update($node) {
+// make sure part 'a' only???
+// reset other fields like page / galley / order
+// lock fields on slave
+// sync workflow on slaves
+  if (!isset($node->original)) {
+    return;
+  }
+  $node_orig = $node->original;
+  $items_orig = field_get_items('node', $node_orig, 'field_repeat_issues');
+  $items_orig_list = !empty($items_orig) ? array_column($items_orig, 'target_id') : array();
+  $items = field_get_items('node', $node, 'field_repeat_issues');
+  $items_list = !empty($items) ? array_column($items, 'target_id') : array();
+  $add = array_diff($items_list, $items_orig_list);
+  $remove = array_diff($items_orig_list, $items_list);
+  // Any new references create nodes
+  if (!empty($add)) {
+    // take a copy of the notice
+    $clone = openplus_clone_entity('node', $node);
+    if ($clone) {
+      foreach ($add as $item) {
+        $clone->field_pub_no[LANGUAGE_NONE][0]['target_id'] = $item;
+        $clone->field_repeat_master[LANGUAGE_NONE][0]['target_id'] = $node->nid;
+        $clone->field_repeat_issues = array();
+        $clone->vid = NULL;
+        $clone->path = array('pathauto' => TRUE);
+        entity_save('node', $clone);
+        drupal_set_message(t('Notice has been cloned to nid @nid.', array('@nid' => $clone->nid)));
+      } 
+    }
+  }
+
+  // any references removed delete nodes
+  if (!empty($remove)) {
+    foreach ($remove as $item) {
+      $slave_nid = openplus_get_slave_notice($item, $node->nid);
+      if (!empty($slave_nid)) {
+        node_delete($slave_nid);
+        drupal_set_message(t('Notice @nid has been deleted.', array('@nid' => $slave_nid)));
+      }
+    }
+  }
+
+}
+
+/**
+ * Implements hook_node_update()
+ */
+function openplus_node_update($node) {
+  if ($node->type == 'notice') {
+     // propagate any state changes
+     $field_name = 'field_publishing_state';
+     $wfstate  = workflow_node_current_state($node, 'node', $field_name);
+     $wfstate_orig =  workflow_node_previous_state($node, 'node', $field_name);
+     if ($wfstate != $wfstate_orig) {
+       $items = field_get_items('node', $node, 'field_repeat_issues');
+       if (!empty($items)) {
+         foreach ($items as $item) {
+           $slave_nid = openplus_get_slave_notice($item['target_id'], $node->nid);
+           $slave = node_load($slave_nid);
+           $slave_state  = workflow_node_current_state($slave, 'node', $field_name);
+           if ($slave_state != $wfstate) {
+             $transition = new WorkflowTransition();
+             $transition->setValues('node', $slave, $field_name, $wfstate_orig, $wfstate, 1, REQUEST_TIME, 'Automatically propagating state change');
+           //$transition->execute(TRUE);
+             workflow_execute_transition('node', $slave, $field_name, $transition, $force = TRUE);
+           }
+        }
+      } 
+    }
+  }
+
+}
+
+/**
+ * Helper function to see if a node exists for issue nid / repeat master notice nid pairs
+ */
+function openplus_get_slave_notice($publication_nid, $master_nid) {
+  $query = new EntityFieldQuery();
+  $query->entityCondition('entity_type', 'node');
+  $query->fieldCondition('field_repeat_master', 'target_id', $master_nid, '=');
+  $query->fieldCondition('field_pub_no', 'target_id', $publication_nid, '=');
+  $results = $query->execute();
+  if (isset($results['node'])) {
+    $nids = array_keys($results['node']);
+    return array_pop($nids);
+  }
+
+  return FALSE;
+}
+
+/**
+ * Replicate code specific for repeat notices
+ */
+function openplus_clone_entity($entity_type, $entity) {
+  $clone = clone $entity;
+
+  if ($clone) {
+    // Set the entity as new entity.
+    $clone->is_new = TRUE;
+
+    // Reset entity id.
+    $entity_info = entity_get_info($entity_type);
+    $clone->{$entity_info['entity keys']['id']} = NULL;
+
+    // Reset UUID.
+    if (isset($entity_info['uuid']) && $entity_info['uuid'] == TRUE && !empty($entity_info['entity keys']['uuid'])) {
+      $clone->{$entity_info['entity keys']['uuid']} = NULL;
+      if (!empty($entity_info['entity keys']['revision uuid'])) {
+        $clone->{$entity_info['entity keys']['revision uuid']} = NULL;
+      }
+    }
+
+    // Let other modules do special actions on each field.
+    replicate_clone_fields($clone, $entity_type);
+
+  }
+
+  return $clone;
+}
+

@@ -1,0 +1,147 @@
+<?php
+
+/**
+ * @file custom_search_api_widget.module
+ * Contains only one hook to define the CTools plugin directory.
+ */
+
+/**
+ * Implements hook_ctools_plugin_directory().
+ */
+function custom_search_api_widget_ctools_plugin_directory($owner, $plugin_type) {
+  if ($owner == 'ctools') {
+    return "plugins/$plugin_type";
+  }
+}
+
+function custom_search_api_widget_form() {
+  return drupal_get_form('custom_search_api_widget_search_form');
+}
+
+function custom_search_api_widget_search_form($form, &$form_state, $conf, $panel_args, $context) {
+  $form['#tree'] = TRUE;
+
+  $form['#attributes']['class'][] = 'search-widget-form';
+  $form['#attributes']['title'] = t($conf['search_box']['widget_hint']);
+
+  if ($conf['search_box']['widget_prepopulate'] > 0 && !empty($panel_args[$conf['search_box']['widget_prepopulate'] - 1])) {
+    $default = urldecode($panel_args[$conf['search_box']['widget_prepopulate'] - 1]);
+  }
+  else {
+    $default = $conf['search_box']['widget_text'];
+  }
+
+  //@TODO need to add a setting for the panel arg
+  $form['keys'] = array(
+    '#type' => 'textfield',
+    '#title' => t($conf['search_box']['widget_label']),
+    '#default_value' => $default,
+    '#size' => $conf['search_box']['widget_size'],
+    '#maxlength' => $conf['search_box']['widget_maxlength'],
+  );
+
+  //build the exposed fields
+
+  foreach ($conf['fields'] as $field) {
+    // in php 5.3.10 and 5.3.17 need to check if it's an array
+    if (is_array($field) && isset($field['field'])) {
+      $field_info = field_info_field($field['field']);
+// @TODO add support for other field types
+      if ($field_info['type'] == 'entityreference' && $field_info['settings']['target_type'] == 'taxonomy_term') {
+        $bundles = array_keys($field_info['settings']['handler_settings']['target_bundles']);
+        $options = array(0 => t($field['field_any']));
+        foreach ($bundles as $bundle) {
+          $voc = taxonomy_vocabulary_machine_name_load($bundle);
+          $tree = taxonomy_get_tree($voc->vid, 0, 1, $load_entities = TRUE);
+          foreach ($tree as $term) {
+            $items = field_get_items('taxonomy_term', $term, 'name_field');
+            $name_field = array_pop($items);
+            $options[$term->tid] = $name_field['value'];
+          }
+        }
+        $form['fields'][$field['field']] = array(
+          '#type'           => 'select',
+          '#title'          => t($field['field_label']),
+          '#options'        => $options,
+          '#default_value'  => 0,
+        );
+      }
+      elseif ($field_info['type'] == 'taxonomy_term_reference') {
+        $options = array(0 => t($field['field_any']));
+        $voc = taxonomy_vocabulary_machine_name_load($field_info['settings']['allowed_values'][0]['vocabulary']);
+        $tree = taxonomy_get_tree($voc->vid, 0, 1, $load_entities = TRUE);
+        foreach ($tree as $term) {
+          $items = field_get_items('taxonomy_term', $term, 'name_field');
+          if (!empty($items)) {
+            $name_field = array_pop($items);
+            $options[$term->tid] = $name_field['value'];
+          }
+          else {
+            $options[$term->tid] = $term->name;
+          }
+        }
+        $form['fields'][$field['field']] = array(
+          '#type'           => 'select',
+          '#title'          => t($field['field_label']),
+          '#options'        => $options,
+          '#default_value'  => 0,
+        );
+      }
+    }
+  }
+
+  $form['actions'] = array('#type' => 'actions');
+  $form['actions']['submit'] = array('#type' => 'submit', '#value' => t($conf['search_box']['submit_text']));
+  $form['#submit'] = array('custom_search_api_widget_search_form_submit');
+  $form['#validate'] = array('custom_search_api_widget_search_form_validate');
+  $path = ctools_context_keyword_substitute($conf['paths']['search_paths'][$GLOBALS['language']->language], array(), $context);
+  $form['path'] = array('#type' => 'hidden', '#value' => $path);
+
+  return $form;
+}
+
+function custom_search_api_widget_search_form_validate($form, &$form_state) {
+  //form_set_error('keys', 'there is a problem.');
+  //dpm($form_state, 'validate');
+}
+
+function custom_search_api_widget_search_form_submit($form, &$form_state) {
+  // remove ? & and starting with dot as this can break the url
+  //$remove_chars = array('?', '&');
+  //$key = str_replace($remove_chars, '', $form_state['values']['keys']);
+  //$key = preg_replace( '/^\.+/', '', $key);
+  //$key = drupal_encode_path($key);
+  $key = $form_state['values']['keys'];
+  $custom_path = str_replace('[key]', $key, $form_state['values']['path']);
+  // Check for a query string.
+  $custom_path_query_position = strpos($custom_path, '?');
+  $custom_path_query = array();
+  $count = 0;
+  if ($custom_path_query_position !== FALSE) {
+    $custom_path_query_tmp = substr($custom_path, 1 + $custom_path_query_position);
+    $custom_path_query_tmp = str_replace('&amp;', '&', $custom_path_query_tmp);
+    $custom_path_query_tmp = explode('&', $custom_path_query_tmp);
+    foreach ($custom_path_query_tmp as $param) {
+      $count++;
+      $param_exploded = explode('=', $param);
+      $custom_path_query[$param_exploded[0]] = $param_exploded[1];
+    }
+    $custom_path = substr($custom_path, 0, $custom_path_query_position);
+  }
+  // Check for external path. If not, add base path.
+  if (drupal_substr($custom_path, 0, 4) != 'http') {
+    $custom_path = url($custom_path, array('absolute' => TRUE));
+  }
+
+  // Add the fields to the query
+  if (!empty($form_state['values']['fields'])) {
+    foreach ($form_state['values']['fields'] as $field=>$value) {
+      if (!empty($value)) {
+        $custom_path_query['f[' . $count . ']'] = $field . ':' . $value;
+      }
+    }
+  }
+
+  // Send the final url.
+  $form_state['redirect'] = url($custom_path, array('query' => $custom_path_query, 'absolute' => TRUE));
+}
